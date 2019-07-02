@@ -685,7 +685,7 @@ class PivotTableViz(BaseViz):
             values=[utils.get_metric_name(m) for m in self.form_data.get("metrics")],
             aggfunc=aggfunc,
             margins=self.form_data.get("pivot_margins"),
-            dropna=False,
+            #dropna=False,  Commented for fixing bug with all NULL values
         )
         # Display metrics side by side with each column
         if self.form_data.get("combine_metric"):
@@ -693,7 +693,7 @@ class PivotTableViz(BaseViz):
         return dict(
             columns=list(df.columns),
             html=df.to_html(
-                na_rep="null",
+                na_rep=" ",
                 classes=(
                     "dataframe table table-striped table-bordered "
                     "table-condensed table-hover"
