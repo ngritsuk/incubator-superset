@@ -702,7 +702,7 @@ class PivotTableViz(BaseViz):
         return dict(
             columns=list(df.columns),
             html=df.to_html(
-                na_rep="null",
+                na_rep="",
                 classes=(
                     "dataframe table table-striped table-bordered "
                     "table-condensed table-hover"
