@@ -40,6 +40,7 @@ services:
     build:
       context: ../../
       dockerfile: contrib/docker/Dockerfile
+    shm_size: '1gb'
     restart: unless-stopped
     environment:
       POSTGRES_DB: superset
@@ -51,7 +52,7 @@ services:
       REDIS_PORT: 6379
       SMTP_HOST: smtp.gmail.com
       SMTP_USER: superset@facemetrics.io
-      SMTP_PASSWORD:${ENV_SMTP_PASSWORD}
+      SMTP_PASSWORD: ${ENV_SMTP_PASSWORD}
       # If using production, comment development volume below
       SUPERSET_ENV: production
       #SUPERSET_ENV: development
