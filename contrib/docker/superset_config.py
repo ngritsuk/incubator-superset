@@ -71,6 +71,15 @@ class CeleryConfig(object):
             'task': 'email_reports.schedule_hourly',
             'schedule': crontab(minute=1, hour='*'),
         },
+        'cache-warmup-hourly': {
+            'task': 'cache-warmup',
+            'schedule': crontab(minute=0, hour='*'),
+            'kwargs': {
+                'strategy_name': 'top_n_dashboards',
+                'top_n': 3,
+                'since': '7 days ago',
+            },
+        },
     }
 
 # config
@@ -86,6 +95,16 @@ SQLALCHEMY_DATABASE_URI = 'postgresql://%s:%s@%s:%s/%s' % (POSTGRES_USER,
 CELERY_CONFIG = CeleryConfig
 RESULTS_BACKEND = RedisCache(
     host=REDIS_HOST, port=REDIS_PORT, key_prefix='superset_results')
+
+
+# cache
+CACHE_CONFIG = {
+    'CACHE_TYPE': 'redis',
+    'CACHE_DEFAULT_TIMEOUT': 60 * 60 * 24, # 1 day default (in secs)
+    'CACHE_KEY_PREFIX': 'superset_results',
+    'CACHE_REDIS_URL': CeleryConfig.BROKER_URL,
+}
+
 
 # email reports
 ENABLE_SCHEDULED_EMAIL_REPORTS=True
