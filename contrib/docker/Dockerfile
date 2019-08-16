@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-FROM python:3.6-jessie
+FROM python:3.6-stretch
 
 RUN useradd --user-group --create-home --no-log-init --shell /bin/bash superset
 
@@ -22,10 +22,13 @@ RUN useradd --user-group --create-home --no-log-init --shell /bin/bash superset
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
+ENV DEBIAN_FRONTEND noninteractive
+
 RUN apt-get update -y
 
 # Install dependencies to fix `curl https support error` and `elaying package configuration warning`
-RUN apt-get install -y apt-transport-https apt-utils
+RUN apt-get install -y apt-utils
+RUN apt-get install -y apt-transport-https
 
 # Install superset dependencies
 # https://superset.incubator.apache.org/installation.html#os-dependencies
@@ -33,7 +36,7 @@ RUN apt-get install -y build-essential libssl-dev \
     libffi-dev python3-dev libsasl2-dev libldap2-dev libxi-dev
 
 # Install extra useful tool for development
-RUN apt-get install -y vim less postgresql-client redis-tools
+RUN apt-get install -y vim less postgresql-client redis-tools wget firefox-esr
 
 # Install nodejs for custom build
 # https://superset.incubator.apache.org/installation.html#making-your-own-build
@@ -50,6 +53,9 @@ RUN pip install --upgrade setuptools pip \
     && pip install -r requirements.txt -r requirements-dev.txt \
     && rm -rf /root/.cache/pip
 
+# install db deps
+RUN pip install --upgrade psycopg2 mysqlclient sqlalchemy-redshift pybigquery && rm -rf /root/.cache/pip
+
 COPY --chown=superset:superset superset superset
 
 ENV PATH=/home/superset/superset/bin:$PATH \
@@ -61,6 +67,11 @@ RUN cd superset/assets \
     && npm ci \
     && npm run build \
     && rm -rf node_modules
+
+# install geckodriver
+RUN wget https://github.com/mozilla/geckodriver/releases/download/v0.24.0/geckodriver-v0.24.0-linux64.tar.gz \
+    && tar -xvzf geckodriver* --directory superset/bin \
+    && chmod +x superset/bin/geckodriver
 
 COPY contrib/docker/docker-init.sh .
 COPY contrib/docker/docker-entrypoint.sh /entrypoint.sh

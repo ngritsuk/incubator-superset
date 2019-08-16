@@ -42,6 +42,7 @@ services:
       dockerfile: contrib/docker/Dockerfile
     env_file:
       - .env
+    shm_size: '1gb'
     restart: unless-stopped
     environment:
       POSTGRES_DB: superset
@@ -51,11 +52,15 @@ services:
       POSTGRES_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      SMTP_HOST: smtp.gmail.com
+      SMTP_USER: superset@facemetrics.io
+      SMTP_PASSWORD: ${ENV_SMTP_PASSWORD}
       # If using production, comment development volume below
-      #SUPERSET_ENV: production
-      SUPERSET_ENV: development
+      SUPERSET_ENV: production
+      #SUPERSET_ENV: development
     ports:
       - 8088:8088
+      - 5555:5555
     depends_on:
       - postgres
       - redis
@@ -63,7 +68,7 @@ services:
       # this is needed to communicate with the postgres and redis services
       - ./superset_config.py:/home/superset/superset/superset_config.py
       # this is needed for development, remove with SUPERSET_ENV=production
-      - ../../superset:/home/superset/superset
+      # - ../../superset:/home/superset/superset
 
 volumes:
   postgres:
