@@ -40,8 +40,6 @@ services:
     build:
       context: ../../
       dockerfile: contrib/docker/Dockerfile
-    env_file:
-      - .env
     shm_size: '1gb'
     restart: unless-stopped
     environment:

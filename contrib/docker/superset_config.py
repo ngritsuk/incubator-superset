@@ -38,8 +38,8 @@ POSTGRES_PASSWORD = get_env_variable('POSTGRES_PASSWORD')
 POSTGRES_HOST = get_env_variable('POSTGRES_HOST')
 POSTGRES_PORT = get_env_variable('POSTGRES_PORT')
 POSTGRES_DB = get_env_variable('POSTGRES_DB')
-CONSUMER_KEY = get_env_variable('CONSUMER_KEY')
-CONSUMER_SECRET = get_env_variable('CONSUMER_SECRET')
+GOOGLE_OAUTH_KEY = get_env_variable('GOOGLE_OAUTH_KEY')
+GOOGLE_OAUTH_SECRET = get_env_variable('GOOGLE_OAUTH_SECRET')
 
 REDIS_HOST = get_env_variable('REDIS_HOST')
 REDIS_PORT = get_env_variable('REDIS_PORT')
@@ -111,8 +111,8 @@ OAUTH_PROVIDERS = [
      'request_token_url': None,
      'access_token_url':    'https://accounts.google.com/o/oauth2/token',
      'authorize_url': 'https://accounts.google.com/o/oauth2/auth',
-     'consumer_key': CONSUMER_KEY,
-     'consumer_secret': CONSUMER_SECRET
+     'consumer_key': GOOGLE_OAUTH_KEY,
+     'consumer_secret': GOOGLE_OAUTH_SECRET
     }
   }
 ]
