@@ -139,7 +139,7 @@ EMAIL_REPORTS_CRON_RESOLUTION = 15
 SCHEDULED_EMAIL_DEBUG_MODE = False
 
 WEBDRIVER_BASEURL = get_env_variable('WEBDRIVER_BASEURL', 'http://0.0.0.0:8088/')
-WEBDRIVER_WINDOW = '{"dashboard": (3000, 2000), "slice": (3000, 1200)}'
+WEBDRIVER_WINDOW = {"dashboard": (3000, 2000), "slice": (3000, 1200)}
 
 EMAIL_NOTIFICATIONS = True
 SMTP_HOST = get_env_variable('SMTP_HOST', 'localhost')
