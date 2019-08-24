@@ -37,8 +37,6 @@ future==0.17.1            # via parsedatetime
 geographiclib==1.49       # via geopy
 geopy==1.20.0
 gunicorn==19.8.1
-flower==0.9.3
-gevent==1.4.0
 humanize==0.5.1
 isodate==0.6.0
 itsdangerous==1.1.0       # via flask
@@ -83,4 +81,3 @@ webencodings==0.5.1       # via bleach
 werkzeug==0.15.5          # via flask, flask-jwt-extended
 wtforms-json==0.3.3
 wtforms==2.2.1            # via flask-wtf, wtforms-json
-flask-oauthlib==0.9.5     
