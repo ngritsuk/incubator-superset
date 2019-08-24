@@ -16,5 +16,5 @@
 #
 gevent==1.4.0
 flower==0.9.3
-oauthlib=3.1.0
+oauthlib==3.1.0
 flask-oauthlib==0.9.5
