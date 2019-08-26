@@ -41,6 +41,7 @@ services:
       context: ../../
       dockerfile: contrib/docker/Dockerfile
     shm_size: '1gb'
+    env_file: .env
     restart: unless-stopped
     environment:
       POSTGRES_DB: superset
