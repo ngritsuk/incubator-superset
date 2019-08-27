@@ -38,8 +38,8 @@ POSTGRES_PASSWORD = get_env_variable('POSTGRES_PASSWORD')
 POSTGRES_HOST = get_env_variable('POSTGRES_HOST')
 POSTGRES_PORT = get_env_variable('POSTGRES_PORT')
 POSTGRES_DB = get_env_variable('POSTGRES_DB')
-GOOGLE_OAUTH_KEY = get_env_variable('GOOGLE_OAUTH_KEY')
-GOOGLE_OAUTH_SECRET = get_env_variable('GOOGLE_OAUTH_SECRET')
+#GOOGLE_OAUTH_KEY = get_env_variable('GOOGLE_OAUTH_KEY')
+#GOOGLE_OAUTH_SECRET = get_env_variable('GOOGLE_OAUTH_SECRET')
 
 REDIS_HOST = get_env_variable('REDIS_HOST')
 REDIS_PORT = get_env_variable('REDIS_PORT')
@@ -97,29 +97,29 @@ SQLALCHEMY_DATABASE_URI = 'postgresql://%s:%s@%s:%s/%s' % (POSTGRES_USER,
 
 CELERY_CONFIG = CeleryConfig
 
-OAUTH_PROVIDERS = [
- {
-   'name': 'google',
-   'whitelist': ['@facemetrics.io'],
-   'icon': 'fa-google',
-   'token_key': 'access_token', 
-   'remote_app': {
-     'base_url': 'https://www.googleapis.com/oauth2/v2/',
-     'request_token_params': {
-     'scope': 'email profile'
-     },
-     'request_token_url': None,
-     'access_token_url':    'https://accounts.google.com/o/oauth2/token',
-     'authorize_url': 'https://accounts.google.com/o/oauth2/auth',
-     'consumer_key': GOOGLE_OAUTH_KEY,
-     'consumer_secret': GOOGLE_OAUTH_SECRET
-    }
-  }
-]
+#OAUTH_PROVIDERS = [
+# {
+#   'name': 'google',
+#   'whitelist': ['@facemetrics.io'],
+#   'icon': 'fa-google',
+#   'token_key': 'access_token', 
+#   'remote_app': {
+#     'base_url': 'https://www.googleapis.com/oauth2/v2/',
+#     'request_token_params': {
+#     'scope': 'email profile'
+#     },
+#     'request_token_url': None,
+#     'access_token_url':    'https://accounts.google.com/o/oauth2/token',
+#     'authorize_url': 'https://accounts.google.com/o/oauth2/auth',
+#     'consumer_key': GOOGLE_OAUTH_KEY,
+#     'consumer_secret': GOOGLE_OAUTH_SECRET
+#    }
+#  }
+#]
 
-AUTH_TYPE = AUTH_OAUTH
-AUTH_USER_REGISTRATION = True
-AUTH_USER_REGISTRATION_ROLE = "Public"
+AUTH_TYPE = AUTH_DB
+#AUTH_USER_REGISTRATION = True
+#AUTH_USER_REGISTRATION_ROLE = "Public"
 RESULTS_BACKEND = RedisCache(
     host=REDIS_HOST, port=REDIS_PORT, key_prefix='superset_results')
 
