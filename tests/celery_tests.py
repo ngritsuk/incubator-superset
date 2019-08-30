@@ -15,12 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 """Unit tests for Superset Celery worker"""
+import datetime
 import json
 import subprocess
 import time
 import unittest
+import unittest.mock as mock
 
-from superset import app, db
+from superset import app, db, sql_lab
+from superset.dataframe import SupersetDataFrame
+from superset.db_engine_specs.base import BaseEngineSpec
 from superset.models.helpers import QueryStatus
 from superset.models.sql_lab import Query
 from superset.sql_parse import ParsedQuery
@@ -128,14 +132,14 @@ class CeleryTestCase(SupersetTestCase):
         return json.loads(resp.data)
 
     def test_run_sync_query_dont_exist(self):
-        main_db = get_main_database(db.session)
+        main_db = get_main_database()
         db_id = main_db.id
         sql_dont_exist = "SELECT name FROM table_dont_exist"
         result1 = self.run_sql(db_id, sql_dont_exist, "1", cta="true")
         self.assertTrue("error" in result1)
 
     def test_run_sync_query_cta(self):
-        main_db = get_main_database(db.session)
+        main_db = get_main_database()
         backend = main_db.backend
         db_id = main_db.id
         tmp_table_name = "tmp_async_22"
@@ -158,7 +162,7 @@ class CeleryTestCase(SupersetTestCase):
             self.assertGreater(len(results["data"]), 0)
 
     def test_run_sync_query_cta_no_data(self):
-        main_db = get_main_database(db.session)
+        main_db = get_main_database()
         db_id = main_db.id
         sql_empty_result = "SELECT * FROM ab_user WHERE id=666"
         result3 = self.run_sql(db_id, sql_empty_result, "3")
@@ -179,7 +183,7 @@ class CeleryTestCase(SupersetTestCase):
         return self.run_sql(db_id, sql)
 
     def test_run_async_query(self):
-        main_db = get_main_database(db.session)
+        main_db = get_main_database()
         db_id = main_db.id
 
         self.drop_table_if_exists("tmp_async_1", main_db)
@@ -212,7 +216,7 @@ class CeleryTestCase(SupersetTestCase):
         self.assertEqual(True, query.select_as_cta_used)
 
     def test_run_async_query_with_lower_limit(self):
-        main_db = get_main_database(db.session)
+        main_db = get_main_database()
         db_id = main_db.id
         self.drop_table_if_exists("tmp_async_2", main_db)
 
@@ -241,6 +245,114 @@ class CeleryTestCase(SupersetTestCase):
         self.assertEqual(1, query.limit)
         self.assertEqual(True, query.select_as_cta)
         self.assertEqual(True, query.select_as_cta_used)
+
+    def test_default_data_serialization(self):
+        data = [("a", 4, 4.0, datetime.datetime(2019, 8, 18, 16, 39, 16, 660000))]
+        cursor_descr = (
+            ("a", "string"),
+            ("b", "int"),
+            ("c", "float"),
+            ("d", "datetime"),
+        )
+        db_engine_spec = BaseEngineSpec()
+        cdf = SupersetDataFrame(data, cursor_descr, db_engine_spec)
+
+        with mock.patch.object(
+            db_engine_spec, "expand_data", wraps=db_engine_spec.expand_data
+        ) as expand_data:
+            data, selected_columns, all_columns, expanded_columns = sql_lab._serialize_and_expand_data(
+                cdf, db_engine_spec, False
+            )
+            expand_data.assert_called_once()
+
+        self.assertIsInstance(data, list)
+
+    def test_new_data_serialization(self):
+        data = [("a", 4, 4.0, datetime.datetime(2019, 8, 18, 16, 39, 16, 660000))]
+        cursor_descr = (
+            ("a", "string"),
+            ("b", "int"),
+            ("c", "float"),
+            ("d", "datetime"),
+        )
+        db_engine_spec = BaseEngineSpec()
+        cdf = SupersetDataFrame(data, cursor_descr, db_engine_spec)
+
+        with mock.patch.object(
+            db_engine_spec, "expand_data", wraps=db_engine_spec.expand_data
+        ) as expand_data:
+            data, selected_columns, all_columns, expanded_columns = sql_lab._serialize_and_expand_data(
+                cdf, db_engine_spec, True
+            )
+            expand_data.assert_not_called()
+
+        self.assertIsInstance(data, bytes)
+
+    def test_default_payload_serialization(self):
+        use_new_deserialization = False
+        data = [("a", 4, 4.0, datetime.datetime(2019, 8, 18, 16, 39, 16, 660000))]
+        cursor_descr = (
+            ("a", "string"),
+            ("b", "int"),
+            ("c", "float"),
+            ("d", "datetime"),
+        )
+        db_engine_spec = BaseEngineSpec()
+        cdf = SupersetDataFrame(data, cursor_descr, db_engine_spec)
+        query = {
+            "database_id": 1,
+            "sql": "SELECT * FROM birth_names LIMIT 100",
+            "status": QueryStatus.PENDING,
+        }
+        serialized_data, selected_columns, all_columns, expanded_columns = sql_lab._serialize_and_expand_data(
+            cdf, db_engine_spec, use_new_deserialization
+        )
+        payload = {
+            "query_id": 1,
+            "status": QueryStatus.SUCCESS,
+            "state": QueryStatus.SUCCESS,
+            "data": serialized_data,
+            "columns": all_columns,
+            "selected_columns": selected_columns,
+            "expanded_columns": expanded_columns,
+            "query": query,
+        }
+
+        serialized = sql_lab._serialize_payload(payload, use_new_deserialization)
+        self.assertIsInstance(serialized, str)
+
+    def test_msgpack_payload_serialization(self):
+        use_new_deserialization = True
+        data = [("a", 4, 4.0, datetime.datetime(2019, 8, 18, 16, 39, 16, 660000))]
+        cursor_descr = (
+            ("a", "string"),
+            ("b", "int"),
+            ("c", "float"),
+            ("d", "datetime"),
+        )
+        db_engine_spec = BaseEngineSpec()
+        cdf = SupersetDataFrame(data, cursor_descr, db_engine_spec)
+        query = {
+            "database_id": 1,
+            "sql": "SELECT * FROM birth_names LIMIT 100",
+            "status": QueryStatus.PENDING,
+        }
+        serialized_data, selected_columns, all_columns, expanded_columns = sql_lab._serialize_and_expand_data(
+            cdf, db_engine_spec, use_new_deserialization
+        )
+        payload = {
+            "query_id": 1,
+            "status": QueryStatus.SUCCESS,
+            "state": QueryStatus.SUCCESS,
+            "data": serialized_data,
+            "columns": all_columns,
+            "selected_columns": selected_columns,
+            "expanded_columns": expanded_columns,
+            "query": query,
+        }
+
+        serialized = sql_lab._serialize_payload(payload, use_new_deserialization)
+        self.assertIsInstance(serialized, bytes)
 
     @staticmethod
     def de_unicode_dict(d):

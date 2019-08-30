@@ -16,19 +16,22 @@
 # under the License.
 # pylint: disable=C,R,W
 from collections import OrderedDict
+from datetime import datetime
+from distutils.version import StrictVersion
 import logging
 import re
 import textwrap
 import time
-from typing import List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib import parse
 
-from sqlalchemy import Column, literal_column, types
+from sqlalchemy import Column, literal_column
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.engine.result import RowProxy
-from sqlalchemy.sql.expression import ColumnClause
+from sqlalchemy.sql.expression import ColumnClause, Select
 
+from superset import is_feature_enabled
 from superset.db_engine_specs.base import BaseEngineSpec
 from superset.exceptions import SupersetTemplateException
 from superset.models.sql_types.presto_sql_types import type_map as presto_type_map
@@ -57,7 +60,7 @@ class PrestoEngineSpec(BaseEngineSpec):
     }
 
     @classmethod
-    def get_view_names(cls, inspector, schema):
+    def get_view_names(cls, inspector: Inspector, schema: Optional[str]) -> List[str]:
         """Returns an empty list
 
         get_table_names() function returns all table names and view names,
@@ -195,7 +198,7 @@ class PrestoEngineSpec(BaseEngineSpec):
 
     @classmethod
     def _show_columns(
-        cls, inspector: Inspector, table_name: str, schema: str
+        cls, inspector: Inspector, table_name: str, schema: Optional[str]
     ) -> List[RowProxy]:
         """
         Show presto column names
@@ -213,8 +216,8 @@ class PrestoEngineSpec(BaseEngineSpec):
 
     @classmethod
     def get_columns(
-        cls, inspector: Inspector, table_name: str, schema: str
-    ) -> List[dict]:
+        cls, inspector: Inspector, table_name: str, schema: Optional[str]
+    ) -> List[Dict[str, Any]]:
         """
         Get columns from a Presto data source. This includes handling row and
         array data types
@@ -229,7 +232,9 @@ class PrestoEngineSpec(BaseEngineSpec):
         for column in columns:
             try:
                 # parse column if it is a row or array
-                if "array" in column.Type or "row" in column.Type:
+                if is_feature_enabled("PRESTO_EXPAND_DATA") and (
+                    "array" in column.Type or "row" in column.Type
+                ):
                     structural_column_index = len(result)
                     cls._parse_structural_column(column.Column, column.Type, result)
                     result[structural_column_index]["nullable"] = getattr(
@@ -245,7 +250,7 @@ class PrestoEngineSpec(BaseEngineSpec):
                         column.Type, column.Column
                     )
                 )
-                column_type = types.NullType
+                column_type = "OTHER"
             column_info = cls._create_column_info(column.Column, column_type)
             column_info["nullable"] = getattr(column, "Null", True)
             column_info["default"] = None
@@ -334,7 +339,7 @@ class PrestoEngineSpec(BaseEngineSpec):
     @classmethod
     def select_star(
         cls,
-        my_db,
+        database,
         table_name: str,
         engine: Engine,
         schema: str = None,
@@ -342,21 +347,22 @@ class PrestoEngineSpec(BaseEngineSpec):
         show_cols: bool = False,
         indent: bool = True,
         latest_partition: bool = True,
-        cols: List[dict] = [],
+        cols: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """
         Include selecting properties of row objects. We cannot easily break arrays into
         rows, so render the whole array in its own row and skip columns that correspond
         to an array's contents.
         """
+        cols = cols or []
         presto_cols = cols
-        if show_cols:
+        if is_feature_enabled("PRESTO_EXPAND_DATA") and show_cols:
             dot_regex = r"\.(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)"
             presto_cols = [
                 col for col in presto_cols if not re.search(dot_regex, col["name"])
             ]
-        return super(PrestoEngineSpec, cls).select_star(
-            my_db,
+        return super().select_star(
+            database,
             table_name,
             engine,
             schema,
@@ -380,7 +386,7 @@ class PrestoEngineSpec(BaseEngineSpec):
         return uri
 
     @classmethod
-    def convert_dttm(cls, target_type, dttm):
+    def convert_dttm(cls, target_type: str, dttm: datetime) -> str:
         tt = target_type.upper()
         if tt == "DATE":
             return "from_iso8601_date('{}')".format(dttm.isoformat()[:10])
@@ -389,7 +395,7 @@ class PrestoEngineSpec(BaseEngineSpec):
         return "'{}'".format(dttm.strftime("%Y-%m-%d %H:%M:%S"))
 
     @classmethod
-    def epoch_to_dttm(cls):
+    def epoch_to_dttm(cls) -> str:
         return "from_unixtime({col})"
 
     @classmethod
@@ -545,6 +551,10 @@ class PrestoEngineSpec(BaseEngineSpec):
                 unprocessed_array_columns.add(child_array)
             elif child_array and array_column.startswith(child_array):
                 unprocessed_array_columns.add(array_column)
+            else:
+                # array without any data
+                array_columns_to_process.append(array_column)
+                datum[array_column] = []
         return array_columns_to_process, unprocessed_array_columns
 
     @classmethod
@@ -744,6 +754,9 @@ class PrestoEngineSpec(BaseEngineSpec):
         :return: list of all columns(selected columns and their nested fields),
                  expanded data set, listed of nested fields
         """
+        if not is_feature_enabled("PRESTO_EXPAND_DATA"):
+            return columns, data, []
+
         all_columns: List[dict] = []
         # Get the list of all columns (selected fields and their nested fields)
         for column in columns:
@@ -785,7 +798,9 @@ class PrestoEngineSpec(BaseEngineSpec):
         return all_columns, data, expanded_columns
 
     @classmethod
-    def extra_table_metadata(cls, database, table_name, schema_name):
+    def extra_table_metadata(
+        cls, database, table_name: str, schema_name: str
+    ) -> Dict[str, Any]:
         indexes = database.get_indexes(table_name, schema_name)
         if not indexes:
             return {}
@@ -793,10 +808,11 @@ class PrestoEngineSpec(BaseEngineSpec):
         full_table_name = table_name
         if schema_name and "." not in table_name:
             full_table_name = "{}.{}".format(schema_name, table_name)
-        pql = cls._partition_query(full_table_name)
+        pql = cls._partition_query(full_table_name, database)
         col_names, latest_parts = cls.latest_partition(
             table_name, schema_name, database, show_first=True
         )
+        latest_parts = latest_parts or tuple([None] * len(col_names))
         return {
             "partitions": {
                 "cols": cols,
@@ -808,7 +824,8 @@ class PrestoEngineSpec(BaseEngineSpec):
     @classmethod
     def handle_cursor(cls, cursor, query, session):
         """Updates progress information"""
-        logging.info("Polling the cursor for progress")
+        query_id = query.id
+        logging.info(f"Query {query_id}: Polling the cursor for progress")
         polled = cursor.poll()
         # poll returns dict -- JSON status information or ``None``
         # if the query is done
@@ -818,7 +835,7 @@ class PrestoEngineSpec(BaseEngineSpec):
             # Update the object and wait for the kill signal.
             stats = polled.get("stats", {})
 
-            query = session.query(type(query)).filter_by(id=query.id).one()
+            query = session.query(type(query)).filter_by(id=query_id).one()
             if query.status in [QueryStatus.STOPPED, QueryStatus.TIMED_OUT]:
                 cursor.cancel()
                 break
@@ -835,14 +852,14 @@ class PrestoEngineSpec(BaseEngineSpec):
                 if total_splits and completed_splits:
                     progress = 100 * (completed_splits / total_splits)
                     logging.info(
-                        "Query progress: {} / {} "
-                        "splits".format(completed_splits, total_splits)
+                        "Query {} progress: {} / {} "
+                        "splits".format(query_id, completed_splits, total_splits)
                     )
                     if progress > query.progress:
                         query.progress = progress
                     session.commit()
             time.sleep(1)
-            logging.info("Polling the cursor for progress")
+            logging.info(f"Query {query_id}: Polling the cursor for progress")
             polled = cursor.poll()
 
     @classmethod
@@ -868,7 +885,9 @@ class PrestoEngineSpec(BaseEngineSpec):
         return utils.error_msg_from_exception(e)
 
     @classmethod
-    def _partition_query(cls, table_name, limit=0, order_by=None, filters=None):
+    def _partition_query(
+        cls, table_name, database, limit=0, order_by=None, filters=None
+    ):
         """Returns a partition query
 
         :param table_name: the name of the table to get partitions from
@@ -896,10 +915,20 @@ class PrestoEngineSpec(BaseEngineSpec):
                 l.append(f"{field} = '{value}'")
             where_clause = "WHERE " + " AND ".join(l)
 
+        presto_version = database.get_extra().get("version")
+
+        # Partition select syntax changed in v0.199, so check here.
+        # Default to the new syntax if version is unset.
+        partition_select_clause = (
+            f'SELECT * FROM "{table_name}$partitions"'
+            if not presto_version
+            or StrictVersion(presto_version) >= StrictVersion("0.199")
+            else f"SHOW PARTITIONS FROM {table_name}"
+        )
+
         sql = textwrap.dedent(
             f"""\
-            SELECT * FROM "{table_name}$partitions"
-
+            {partition_select_clause}
             {where_clause}
             {order_by_clause}
             {limit_clause}
@@ -908,37 +937,45 @@ class PrestoEngineSpec(BaseEngineSpec):
         return sql
 
     @classmethod
-    def where_latest_partition(cls, table_name, schema, database, qry, columns=None):
+    def where_latest_partition(
+        cls,
+        table_name: str,
+        schema: str,
+        database,
+        query: Select,
+        columns: Optional[List] = None,
+    ) -> Optional[Select]:
         try:
             col_names, values = cls.latest_partition(
                 table_name, schema, database, show_first=True
             )
         except Exception:
             # table is not partitioned
-            return False
+            return None
 
         if values is None:
-            return False
+            return None
 
         column_names = {column.get("name") for column in columns or []}
         for col_name, value in zip(col_names, values):
             if col_name in column_names:
-                qry = qry.where(Column(col_name) == value)
-        return qry
+                query = query.where(Column(col_name) == value)
+        return query
 
     @classmethod
-    def _latest_partition_from_df(cls, df):
+    def _latest_partition_from_df(cls, df) -> Optional[List[str]]:
         if not df.empty:
             return df.to_records(index=False)[0].item()
+        return None
 
     @classmethod
-    def latest_partition(cls, table_name, schema, database, show_first=False):
+    def latest_partition(
+        cls, table_name: str, schema: str, database, show_first: bool = False
+    ):
         """Returns col name and the latest (max) partition value for a table
 
         :param table_name: the name of the table
-        :type table_name: str
         :param schema: schema / database / namespace
-        :type schema: str
         :param database: database query will be run against
         :type database: models.Database
         :param show_first: displays the value for the first partitioning key
@@ -946,7 +983,7 @@ class PrestoEngineSpec(BaseEngineSpec):
         :type show_first: bool
 
         >>> latest_partition('foo_table')
-        ('ds', '2018-01-01')
+        (['ds'], ('2018-01-01',))
         """
         indexes = database.get_indexes(table_name, schema)
         if len(indexes[0]["column_names"]) < 1:
@@ -961,7 +998,7 @@ class PrestoEngineSpec(BaseEngineSpec):
             )
         column_names = indexes[0]["column_names"]
         part_fields = [(column_name, True) for column_name in column_names]
-        sql = cls._partition_query(table_name, 1, part_fields)
+        sql = cls._partition_query(table_name, database, 1, part_fields)
         df = database.get_df(sql, schema)
         return column_names, cls._latest_partition_from_df(df)
 
@@ -1008,7 +1045,9 @@ class PrestoEngineSpec(BaseEngineSpec):
             if field not in kwargs.keys():
                 field_to_return = field
 
-        sql = cls._partition_query(table_name, 1, [(field_to_return, True)], kwargs)
+        sql = cls._partition_query(
+            table_name, database, 1, [(field_to_return, True)], kwargs
+        )
         df = database.get_df(sql, schema)
         if df.empty:
             return ""

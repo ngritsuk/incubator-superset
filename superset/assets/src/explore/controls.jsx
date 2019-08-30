@@ -171,6 +171,7 @@ const metric = {
   ...metrics,
   multi: false,
   label: t('Metric'),
+  description: t('Metric'),
   default: props => mainMetric(props.savedMetrics),
 };
 
@@ -301,6 +302,16 @@ export const controls = {
       ['bl', 'Bottom left'],
       ['br', 'Bottom right'],
     ],
+    renderTrigger: true,
+  },
+
+  legend_format: {
+    label: t('Legend Format'),
+    description: t('Choose the format for legend values'),
+    type: 'SelectControl',
+    clearable: false,
+    default: D3_FORMAT_OPTIONS[0],
+    choices: D3_FORMAT_OPTIONS,
     renderTrigger: true,
   },
 
@@ -559,6 +570,7 @@ export const controls = {
       'Egypt',
       'France',
       'Germany',
+      'India',
       'Italy',
       'Japan',
       'Morocco',
@@ -1468,7 +1480,7 @@ export const controls = {
     renderTrigger: true,
     default: true,
     description: (
-      'Whether to apply filters as they change, or wait for' +
+      'Whether to apply filters as they change, or wait for ' +
       'users to hit an [Apply] button'
     ),
   },
@@ -2126,17 +2138,6 @@ export const controls = {
     label: t('Time Series Columns'),
     validators: [v.nonEmpty],
     controlName: 'TimeSeriesColumnControl',
-  },
-
-  rose_area_proportion: {
-    type: 'CheckboxControl',
-    label: t('Use Area Proportions'),
-    description: t(
-      'Check if the Rose Chart should use segment area instead of ' +
-      'segment radius for proportioning',
-    ),
-    default: false,
-    renderTrigger: true,
   },
 
   time_series_option: {

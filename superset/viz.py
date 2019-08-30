@@ -31,7 +31,6 @@ import logging
 import math
 import pickle as pkl
 import re
-import traceback
 import uuid
 
 from dateutil import relativedelta as rdelta
@@ -321,8 +320,6 @@ class BaseViz(object):
             "extras": extras,
             "timeseries_limit_metric": timeseries_limit_metric,
             "order_desc": order_desc,
-            "prequeries": [],
-            "is_prequery": False,
         }
         return d
 
@@ -365,6 +362,7 @@ class BaseViz(object):
 
         cache_dict["time_range"] = self.form_data.get("time_range")
         cache_dict["datasource"] = self.datasource.uid
+        cache_dict["extra_cache_keys"] = self.datasource.get_extra_cache_keys(query_obj)
         json_data = self.json_dumps(cache_dict, sort_keys=True)
         return hashlib.md5(json_data.encode("utf-8")).hexdigest()
 
@@ -423,7 +421,7 @@ class BaseViz(object):
                 if not self.error_message:
                     self.error_message = "{}".format(e)
                 self.status = utils.QueryStatus.FAILED
-                stacktrace = traceback.format_exc()
+                stacktrace = utils.get_stacktrace()
 
             if (
                 is_loaded
@@ -631,9 +629,7 @@ class TimeTableViz(BaseViz):
         if fd.get("groupby"):
             values = self.metric_labels[0]
             columns = fd.get("groupby")
-        pt = df.pivot_table(
-            index=DTTM_ALIAS, columns=columns, values=values, dropna=False
-        )
+        pt = df.pivot_table(index=DTTM_ALIAS, columns=columns, values=values)
         pt.index = pt.index.map(str)
         pt = pt.sort_index()
         return dict(
@@ -683,7 +679,7 @@ class PivotTableViz(BaseViz):
         if self.form_data.get("granularity") == "all" and DTTM_ALIAS in df:
             del df[DTTM_ALIAS]
 
-        aggfunc = self.form_data.get("pandas_aggfunc")
+        aggfunc = self.form_data.get("pandas_aggfunc") or "sum"
 
         # Ensure that Pandas's sum function mimics that of SQL.
         if aggfunc == "sum":
@@ -968,7 +964,9 @@ class BubbleViz(NVD3Viz):
         self.series = form_data.get("series") or self.entity
         d["row_limit"] = form_data.get("limit")
 
-        d["metrics"] = list(set([self.z_metric, self.x_metric, self.y_metric]))
+        d["metrics"] = [self.z_metric, self.x_metric, self.y_metric]
+        if len(set(self.metric_labels)) < 3:
+            raise Exception(_("Please use 3 different metric labels"))
         if not all(d["metrics"] + [self.entity]):
             raise Exception(_("Pick a metric for x, y and size"))
         return d
@@ -1070,6 +1068,9 @@ class BigNumberTotalViz(BaseViz):
             raise Exception(_("Pick a metric!"))
         d["metrics"] = [self.form_data.get("metric")]
         self.form_data["metric"] = metric
+
+        # Limiting rows is not required as only one cell is returned
+        d["row_limit"] = None
         return d
 
 
@@ -1150,14 +1151,10 @@ class NVD3TimeSeriesViz(NVD3Viz):
                 values=self.metric_labels,
                 fill_value=0,
                 aggfunc=sum,
-                dropna=False,
             )
         else:
             df = df.pivot_table(
-                index=DTTM_ALIAS,
-                columns=fd.get("groupby"),
-                values=self.metric_labels,
-                dropna=False,
+                index=DTTM_ALIAS, columns=fd.get("groupby"), values=self.metric_labels
             )
 
         rule = fd.get("resample_rule")
@@ -1368,7 +1365,7 @@ class NVD3DualLineViz(NVD3Viz):
 
         metric = utils.get_metric_name(fd.get("metric"))
         metric_2 = utils.get_metric_name(fd.get("metric_2"))
-        df = df.pivot_table(index=DTTM_ALIAS, values=[metric, metric_2], dropna=False)
+        df = df.pivot_table(index=DTTM_ALIAS, values=[metric, metric_2])
 
         chart_data = self.to_series(df)
         return chart_data
@@ -1400,7 +1397,11 @@ class NVD3TimePivotViz(NVD3TimeSeriesViz):
         fd = self.form_data
         df = self.process_data(df)
         freq = to_offset(fd.get("freq"))
-        freq.normalize = True
+        try:
+            freq = type(freq)(freq.n, normalize=True, **freq.kwds)
+        except ValueError:
+            freq = type(freq)(freq.n, **freq.kwds)
+        df.index.name = None
         df[DTTM_ALIAS] = df.index.map(freq.rollback)
         df["ranked"] = df[DTTM_ALIAS].rank(method="dense", ascending=False) - 1
         df.ranked = df.ranked.map(int)
@@ -1416,7 +1417,6 @@ class NVD3TimePivotViz(NVD3TimeSeriesViz):
             index=DTTM_ALIAS,
             columns="series",
             values=utils.get_metric_name(fd.get("metric")),
-            dropna=False,
         )
         chart_data = self.to_series(df)
         for serie in chart_data:
@@ -1452,7 +1452,7 @@ class DistributionPieViz(NVD3Viz):
 
     def get_data(self, df):
         metric = self.metric_labels[0]
-        df = df.pivot_table(index=self.groupby, values=[metric], dropna=False)
+        df = df.pivot_table(index=self.groupby, values=[metric])
         df.sort_values(by=metric, ascending=False, inplace=True)
         df = df.reset_index()
         df.columns = ["x", "y"]
@@ -1476,18 +1476,22 @@ class HistogramViz(BaseViz):
         numeric_columns = self.form_data.get("all_columns_x")
         if numeric_columns is None:
             raise Exception(_("Must have at least one numeric column specified"))
-        self.columns = numeric_columns
-        d["columns"] = numeric_columns + self.groupby
+        self.columns = [numeric_columns]
+        d["columns"] = [numeric_columns] + self.groupby
         # override groupby entry to avoid aggregation
         d["groupby"] = []
         return d
 
     def labelify(self, keys, column):
-        if isinstance(keys, str):
+        if isinstance(keys, str) or isinstance(keys, int):
             keys = (keys,)
+
         # removing undesirable characters
-        labels = [re.sub(r"\W+", r"_", k) for k in keys]
-        if len(self.columns) > 1 or not self.groupby:
+        labels = [
+            re.sub(r"\W+", r"_", k) if isinstance(k, str) else str(k) for k in keys
+        ]
+
+        if len(self.columns) > 0 or not self.groupby:
             # Only show numeric column in label if there are many
             labels = [column] + labels
         return "__".join(labels)
@@ -1540,9 +1544,7 @@ class DistributionBarViz(DistributionPieViz):
         row = df.groupby(self.groupby).sum()[metrics[0]].copy()
         row.sort_values(ascending=False, inplace=True)
         columns = fd.get("columns") or []
-        pt = df.pivot_table(
-            index=self.groupby, columns=columns, values=metrics, dropna=False
-        )
+        pt = df.pivot_table(index=self.groupby, columns=columns, values=metrics)
         if fd.get("contribution"):
             pt = pt.T
             pt = (pt / pt.sum()).T
@@ -1747,7 +1749,7 @@ class WorldMapViz(BaseViz):
         return qry
 
     def get_data(self, df):
-        from superset.data import countries
+        from superset.examples import countries
 
         fd = self.form_data
         cols = [fd.get("entity")]
@@ -2427,7 +2429,9 @@ class DeckPolygon(DeckPathViz):
         fd = self.form_data
         elevation = fd["point_radius_fixed"]["value"]
         type_ = fd["point_radius_fixed"]["type"]
-        d["elevation"] = d.get(elevation) if type_ == "metric" else elevation
+        d["elevation"] = (
+            d.get(utils.get_metric_name(elevation)) if type_ == "metric" else elevation
+        )
         return d
 
 

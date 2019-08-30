@@ -27,7 +27,7 @@ import logging
 
 import numpy as np
 import pandas as pd
-from pandas.core.common import _maybe_box_datetimelike
+from pandas.core.common import maybe_box_datetimelike
 from pandas.core.dtypes.dtypes import ExtensionDtype
 
 from superset.utils.core import JS_MAX_INTEGER
@@ -101,18 +101,26 @@ class SupersetDataFrame(object):
             logging.exception(e)
 
     @property
+    def raw_df(self):
+        return self.df
+
+    @property
     def size(self):
         return len(self.df.index)
 
     @property
     def data(self):
+        return self.format_data(self.df)
+
+    @classmethod
+    def format_data(cls, df):
         # work around for https://github.com/pandas-dev/pandas/issues/18372
         data = [
             dict(
-                (k, _maybe_box_datetimelike(v))
-                for k, v in zip(self.df.columns, np.atleast_1d(row))
+                (k, maybe_box_datetimelike(v))
+                for k, v in zip(df.columns, np.atleast_1d(row))
             )
-            for row in self.df.values
+            for row in df.values
         ]
         for d in data:
             for k, v in list(d.items()):

@@ -48,9 +48,10 @@ WORKDIR /home/superset
 
 COPY requirements.txt .
 COPY requirements-dev.txt .
+COPY contrib/docker/requirements-extra.txt .
 
 RUN pip install --upgrade setuptools pip \
-    && pip install -r requirements.txt -r requirements-dev.txt \
+    && pip install -r requirements.txt -r requirements-dev.txt -r requirements-extra.txt \
     && rm -rf /root/.cache/pip
 
 # install db deps

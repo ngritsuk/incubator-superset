@@ -23,7 +23,9 @@ at the end of this file.
 """
 from collections import OrderedDict
 import imp
+import importlib.util
 import json
+import logging
 import os
 import sys
 
@@ -32,6 +34,7 @@ from dateutil import tz
 from flask_appbuilder.security.manager import AUTH_DB
 
 from superset.stats_logger import DummyStatsLogger
+from superset.utils.logging_configurator import DefaultLoggingConfigurator
 
 # Realtime stats logger, a StatsD implementation exists
 STATS_LOGGER = DummyStatsLogger()
@@ -46,9 +49,22 @@ else:
 # Superset specific config
 # ---------------------------------------------------------
 PACKAGE_DIR = os.path.join(BASE_DIR, "static", "assets")
-PACKAGE_FILE = os.path.join(PACKAGE_DIR, "package.json")
-with open(PACKAGE_FILE) as package_file:
-    VERSION_STRING = json.load(package_file)["version"]
+VERSION_INFO_FILE = os.path.join(PACKAGE_DIR, "version_info.json")
+PACKAGE_JSON_FILE = os.path.join(PACKAGE_DIR, "package.json")
+
+#
+# Depending on the context in which this config is loaded, the version_info.json file
+# may or may not be available, as it is generated on install via setup.py. In the event
+# that we're actually running Superset, we will have already installed, therefore it WILL
+# exist. When unit tests are running, however, it WILL NOT exist, so we fall
+# back to reading package.json
+#
+try:
+    with open(VERSION_INFO_FILE) as version_file:
+        VERSION_STRING = json.load(version_file)["version"]
+except Exception:
+    with open(PACKAGE_JSON_FILE) as version_file:
+        VERSION_STRING = json.load(version_file)["version"]
 
 ROW_LIMIT = 50000
 VIZ_ROW_LIMIT = 10000
@@ -102,7 +118,9 @@ WTF_CSRF_EXEMPT_LIST = ["superset.views.core.log"]
 DEBUG = os.environ.get("FLASK_ENV") == "development"
 FLASK_USE_RELOAD = True
 
-# Whether to show the stacktrace on 500 error
+# Superset allows server-side python stacktraces to be surfaced to the
+# user when this feature is on. This may has security implications
+# and it's more secure to turn it off in production settings.
 SHOW_STACKTRACE = True
 
 # Extract and use X-Forwarded-For/X-Forwarded-Proto headers?
@@ -202,7 +220,9 @@ LANGUAGES = {
 # will result in combined feature flags of { 'FOO': True, 'BAR': True, 'BAZ': True }
 DEFAULT_FEATURE_FLAGS = {
     # Experimental feature introducing a client (browser) cache
-    "CLIENT_CACHE": False
+    "CLIENT_CACHE": False,
+    "ENABLE_EXPLORE_JSON_CSRF_PROTECTION": False,
+    "PRESTO_EXPAND_DATA": False,
 }
 
 # A function that receives a dict of all feature flags
@@ -309,10 +329,11 @@ DEFAULT_MODULE_DS_MAP = OrderedDict(
 ADDITIONAL_MODULE_DS_MAP = {}
 ADDITIONAL_MIDDLEWARE = []
 
-"""
-1) https://docs.python-guide.org/writing/logging/
-2) https://docs.python.org/2/library/logging.config.html
-"""
+# 1) https://docs.python-guide.org/writing/logging/
+# 2) https://docs.python.org/2/library/logging.config.html
+
+# Default configurator will consume the LOG_* settings below
+LOGGING_CONFIGURATOR = DefaultLoggingConfigurator()
 
 # Console Log Settings
 
@@ -404,10 +425,8 @@ class CeleryConfig(object):
 
 CELERY_CONFIG = CeleryConfig
 
-"""
 # Set celery config to None to disable all the above configuration
-CELERY_CONFIG = None
-"""
+# CELERY_CONFIG = None
 
 # Additional static HTTP headers to be served by your Superset server. Note
 # Flask-Talisman aplies the relevant security HTTP headers.
@@ -433,6 +452,12 @@ SQLLAB_ASYNC_TIME_LIMIT_SEC = 60 * 60 * 6
 # if enabled, it can be used to store the results of long-running queries
 # in SQL Lab by using the "Run Async" button/feature
 RESULTS_BACKEND = None
+
+# Use PyArrow and MessagePack for async query results serialization,
+# rather than JSON. This feature requires additional testing from the
+# community before it is fully adopted, so this config option is provided
+# in order to disable should breaking issues be discovered.
+RESULTS_BACKEND_USE_MSGPACK = True
 
 # The S3 bucket where you want to store your external hive tables created
 # from CSV files. For example, 'companyname-superset'
@@ -619,29 +644,33 @@ TALISMAN_CONFIG = {
     "force_https_permanent": False,
 }
 
-try:
-    if CONFIG_PATH_ENV_VAR in os.environ:
-        # Explicitly import config module that is not in pythonpath; useful
-        # for case where app is being executed via pex.
-        print(
-            "Loaded your LOCAL configuration at [{}]".format(
-                os.environ[CONFIG_PATH_ENV_VAR]
-            )
-        )
+# URI to database storing the example data, points to
+# SQLALCHEMY_DATABASE_URI by default if set to `None`
+SQLALCHEMY_EXAMPLES_URI = None
+
+if CONFIG_PATH_ENV_VAR in os.environ:
+    # Explicitly import config module that is not necessarily in pythonpath; useful
+    # for case where app is being executed via pex.
+    try:
+        cfg_path = os.environ[CONFIG_PATH_ENV_VAR]
         module = sys.modules[__name__]
-        override_conf = imp.load_source(
-            "superset_config", os.environ[CONFIG_PATH_ENV_VAR]
-        )
+        override_conf = imp.load_source("superset_config", cfg_path)
         for key in dir(override_conf):
             if key.isupper():
                 setattr(module, key, getattr(override_conf, key))
 
-    else:
-        from superset_config import *  # noqa
-        import superset_config
-
-        print(
-            "Loaded your LOCAL configuration at [{}]".format(superset_config.__file__)
+        print(f"Loaded your LOCAL configuration at [{cfg_path}]")
+    except Exception:
+        logging.exception(
+            f"Failed to import config for {CONFIG_PATH_ENV_VAR}={cfg_path}"
         )
-except ImportError:
-    pass
+        raise
+elif importlib.util.find_spec("superset_config"):
+    try:
+        from superset_config import *  # noqa pylint: disable=import-error
+        import superset_config  # noqa pylint: disable=import-error
+
+        print(f"Loaded your LOCAL configuration at [{superset_config.__file__}]")
+    except Exception:
+        logging.exception("Found but failed to import local superset_config")
+        raise
