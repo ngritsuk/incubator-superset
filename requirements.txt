@@ -32,12 +32,8 @@ flask-openid==1.2.5       # via flask-appbuilder
 flask-sqlalchemy==2.4.0   # via flask-appbuilder, flask-migrate
 flask-talisman==0.7.0
 flask-wtf==0.14.2
-<<<<<<< HEAD
-flask==1.0.2
 flower==0.9.3
-geopy==1.11.0
 gevent==1.4.0
-gunicorn==19.8.0
 flask==1.1.1
 future==0.17.1            # via parsedatetime
 geographiclib==1.49       # via geopy

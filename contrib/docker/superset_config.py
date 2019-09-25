@@ -38,13 +38,8 @@ POSTGRES_PASSWORD = get_env_variable('POSTGRES_PASSWORD')
 POSTGRES_HOST = get_env_variable('POSTGRES_HOST')
 POSTGRES_PORT = get_env_variable('POSTGRES_PORT')
 POSTGRES_DB = get_env_variable('POSTGRES_DB')
-<<<<<<< HEAD
 #GOOGLE_OAUTH_KEY = get_env_variable('GOOGLE_OAUTH_KEY')
 #GOOGLE_OAUTH_SECRET = get_env_variable('GOOGLE_OAUTH_SECRET')
-=======
-GOOGLE_OAUTH_KEY = get_env_variable('GOOGLE_OAUTH_KEY')
-GOOGLE_OAUTH_SECRET = get_env_variable('GOOGLE_OAUTH_SECRET')
->>>>>>> aarol/deployment/fm_analytics_instance
 
 REDIS_HOST = get_env_variable('REDIS_HOST')
 REDIS_PORT = get_env_variable('REDIS_PORT')
